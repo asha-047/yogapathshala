@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>YogaPathshala</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+    <!-- NAVBAR -->
+    <nav>
+        <div class="logo">🧘 YogaPathshala</div>
+        <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="/features">Features</a></li>
+            <li><a href="/about">About</a></li>
+            <li><a href="/login">Login</a></li>
+            <a href="/register" class="signup-btn">Sign Up</a>
+        </ul>
+    </nav>
+
+    <!-- HERO SECTION -->
+    <section class="hero">
+        <div class="overlay"></div>
+
+        <div class="hero-content">
+            <h1>Transform Your <span>Yoga Journey</span></h1>
+            <p>AI-Powered Intelligent Yoga Training</p>
+            <a href="/register" class="cta-btn">Get Started</a>
+        </div>
+
+        <div class="feature-cards">
+            <div class="card">
+                <h3>Real-Time Guidance</h3>
+                <p>Instant posture correction using AI.</p>
+            </div>
+
+            <div class="card">
+                <h3>Progress Tracking</h3>
+                <p>Monitor accuracy, streak & growth.</p>
+            </div>
+
+            <div class="card">
+                <h3>Level System</h3>
+                <p>Easy, Medium & Advanced workouts.</p>
+            </div>
+        </div>
+    </section>
+
+</body>
+</html>
