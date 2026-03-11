@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Login - YogaPathshala</title>
+</head>
+<body>
+
+<nav>
+    <div class="logo">🧘 YogaPathshala</div>
+    <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/register">Sign Up</a></li>
+    </ul>
+</nav>
+
+<div class="container">
+    <h2>Login</h2>
+    <form method="POST">
+        <input name="email" type="email" placeholder="Email" required>
+        <input name="password" type="password" placeholder="Password" required>
+
+        <select name="role" required>
+            <option value="">Select Role</option>
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+        </select>
+
+        <button class="btn">Login</button>
+    </form>
+    
+    <p>Don't have an account? <a href="/register">Sign up here</a></p>
+</div>
+
+</body>
+</html>

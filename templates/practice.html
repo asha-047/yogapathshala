@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Yoga Practice - YogaPathshala</title>
+</head>
+<body>
+<nav>
+    <div class="logo">🧘 YogaPathshala</div>
+    <ul>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/levels">Levels</a></li>
+        <li><a href="/logout">Logout</a></li>
+    </ul>
+</nav>
+
+<div class="practice-container">
+    <!-- Feedback Section -->
+    <div class="feedback-section">
+        <div id="feedback" class="feedback-box">
+            <h3>Get Ready!</h3>
+            <p>Position yourself in front of the camera</p>
+        </div>
+        <div class="progress-info">
+            <span id="current-pose">Pose 1 of {{ total_poses }}</span>
+            <span id="timer">Hold for 5 seconds</span>
+        </div>
+    </div>
+
+    <!-- Main Practice Area -->
+    <div class="main-practice">
+        <!-- Camera Feed -->
+        <div class="camera-section">
+            <h3>Your Camera</h3>
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" style="display:none;"></canvas>
+            <div id="camera-status" class="status-indicator">🔴 Camera Off</div>
+        </div>
+
+        <!-- Reference Pose -->
+        <div class="pose-section">
+            <h3>Target Pose: <span id="pose-name">{{ poses[0] }}</span></h3>
+            <div class="pose-image">
+                <img id="pose-img" src="/static/images/{{ poses[0]|lower }}.jpg" alt="{{ poses[0] }}" onerror="this.src='/static/images/default-pose.jpg'">
+            </div>
+            <div id="pose-status" class="pose-indicator">⏳ Ready</div>
+        </div>
+    </div>
+
+    <!-- Control Buttons -->
+    <div class="controls">
+        <button id="start-btn" class="btn btn-primary">Start Practice</button>
+        <button id="stop-btn" class="btn btn-secondary" disabled>Stop</button>
+        <button id="skip-btn" class="btn btn-warning" disabled>Skip Pose</button>
+    </div>
+
+    <!-- Session Stats -->
+    <div class="session-stats">
+        <div class="stat-item">
+            <span class="stat-label">Accuracy:</span>
+            <span id="accuracy" class="stat-value">0%</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Completed:</span>
+            <span id="completed" class="stat-value">0/{{ total_poses }}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Streak:</span>
+            <span id="streak" class="stat-value">🔥 0</span>
+        </div>
+    </div>
+</div>
+
+<script>
+// Global variables
+let video, canvas, ctx;
+let isPracticing = false;
+let currentPoseIndex = 0;
+let holdTimer = null;
+let holdStartTime = null;
+let detectionInterval = null;
+let sessionStats = {
+    completed: 0,
+    accuracy: 0,
+    correctDetections: 0,
+    totalDetections: 0
+};
+
+// Pose data from server
+const posesList = JSON.parse('{{ poses|tojson|safe }}');
+const level = "{{ level }}";
+const totalPoses = posesList.length;
+
+// Initialize camera
+async function initCamera() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: 640, height: 480 } 
+        });
+        video.srcObject = stream;
+        document.getElementById('camera-status').innerHTML = '🟢 Camera Active';
+        return true;
+    } catch (err) {
+        console.error('Camera access denied:', err);
+        document.getElementById('feedback').innerHTML = `
+            <h3>Camera Access Required</h3>
+            <p>Please allow camera access to use pose detection</p>
+        `;
+        return false;
+    }
+}
+
+// Start practice session
+async function startPractice() {
+    if (!await initCamera()) return;
+    
+    isPracticing = true;
+    currentPoseIndex = 0;
+    sessionStats = {
+        completed: 0,
+        accuracy: 0,
+        correctDetections: 0,
+        totalDetections: 0
+    };
+    
+    // Update UI
+    document.getElementById('start-btn').disabled = true;
+    document.getElementById('stop-btn').disabled = false;
+    document.getElementById('skip-btn').disabled = false;
+    
+    updatePoseDisplay();
+    startPoseDetection();
+}
+
+// Stop practice session
+function stopPractice() {
+    isPracticing = false;
+    
+    // Stop camera
+    if (video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+    }
+    
+    // Clear timers
+    if (holdTimer) clearInterval(holdTimer);
+    if (detectionInterval) clearInterval(detectionInterval);
+    
+    // Update UI
+    document.getElementById('start-btn').disabled = false;
+    document.getElementById('stop-btn').disabled = true;
+    document.getElementById('skip-btn').disabled = true;
+    document.getElementById('camera-status').innerHTML = '🔴 Camera Off';
+    document.getElementById('feedback').innerHTML = `
+        <h3>Session Complete!</h3>
+        <p>Accuracy: ${sessionStats.accuracy}% | Completed: ${sessionStats.completed}/${totalPoses}</p>
+    `;
+    
+    // Save session to database
+    saveSession();
+}
+
+// Update pose display
+function updatePoseDisplay() {
+    const currentPose = posesList[currentPoseIndex];
+    document.getElementById('pose-name').textContent = currentPose;
+    document.getElementById('current-pose').textContent = `Pose ${currentPoseIndex + 1} of ${totalPoses}`;
+    
+    // Update pose image
+    const poseImg = document.getElementById('pose-img');
+    poseImg.src = `/static/images/${currentPose.toLowerCase()}.jpg`;
+    poseImg.onerror = function() {
+        this.src = '/static/images/default-pose.jpg';
+    };
+    
+    // Reset feedback
+    document.getElementById('feedback').innerHTML = `
+        <h3>Get Ready!</h3>
+        <p>Perform the ${currentPose} pose</p>
+    `;
+    document.getElementById('pose-status').innerHTML = '⏳ Ready';
+    document.getElementById('timer').textContent = 'Hold for 5 seconds';
+    
+    // Clear hold timer
+    if (holdTimer) {
+        clearInterval(holdTimer);
+        holdTimer = null;
+        holdStartTime = null;
+    }
+}
+
+// Start pose detection
+function startPoseDetection() {
+    detectionInterval = setInterval(async () => {
+        if (!isPracticing) return;
+        
+        // Capture frame
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        
+        // Convert to base64
+        const imageData = canvas.toDataURL('image/jpeg');
+        
+        try {
+            // Send to server for detection
+            const response = await fetch('/detect_pose', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image: imageData })
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                console.error('Detection error:', result.error);
+                return;
+            }
+            
+            // Update statistics
+            sessionStats.totalDetections++;
+            if (result.correct) {
+                sessionStats.correctDetections++;
+            }
+            sessionStats.accuracy = Math.round((sessionStats.correctDetections / sessionStats.totalDetections) * 100);
+            
+            // Update UI based on detection
+            updateFeedback(result);
+            
+        } catch (error) {
+            console.error('Detection failed:', error);
+        }
+    }, 1000); // Detect every second
+}
+
+// Update feedback based on pose detection
+function updateFeedback(result) {
+    const currentPose = posesList[currentPoseIndex];
+    const feedbackEl = document.getElementById('feedback');
+    const poseStatusEl = document.getElementById('pose-status');
+    const timerEl = document.getElementById('timer');
+    
+    if (result.correct && result.pose === currentPose) {
+        // Correct pose
+        feedbackEl.innerHTML = `
+            <h3 style="color: green;">✅ Perfect!</h3>
+            <p>You're doing the ${currentPose} pose correctly</p>
+        `;
+        poseStatusEl.innerHTML = '✅ Correct';
+        poseStatusEl.className = 'pose-indicator correct';
+        
+        // Start hold timer if not already running
+        if (!holdTimer) {
+            holdStartTime = Date.now();
+            holdTimer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - holdStartTime) / 1000);
+                const remaining = Math.max(0, 5 - elapsed);
+                timerEl.textContent = `Hold for ${remaining} seconds`;
+                
+                if (remaining === 0) {
+                    // Pose completed successfully
+                    clearInterval(holdTimer);
+                    holdTimer = null;
+                    completePose(true);
+                }
+            }, 100);
+        }
+    } else if (result.pose === "Incorrect Pose" || result.confidence < 0.5) {
+        // Incorrect pose
+        feedbackEl.innerHTML = `
+            <h3 style="color: red;">❌ Incorrect Pose</h3>
+            <p>Please adjust your position to match the ${currentPose} pose</p>
+        `;
+        poseStatusEl.innerHTML = '❌ Incorrect';
+        poseStatusEl.className = 'pose-indicator incorrect';
+        
+        // Reset hold timer
+        if (holdTimer) {
+            clearInterval(holdTimer);
+            holdTimer = null;
+            holdStartTime = null;
+        }
+        timerEl.textContent = 'Hold for 5 seconds';
+    } else {
+        // Wrong pose but detected
+        feedbackEl.innerHTML = `
+            <h3 style="color: orange;">⚠️ Wrong Pose</h3>
+            <p>You're doing ${result.pose} instead of ${currentPose}</p>
+        `;
+        poseStatusEl.innerHTML = '⚠️ Wrong Pose';
+        poseStatusEl.className = 'pose-indicator wrong';
+        
+        // Reset hold timer
+        if (holdTimer) {
+            clearInterval(holdTimer);
+            holdTimer = null;
+            holdStartTime = null;
+        }
+        timerEl.textContent = 'Hold for 5 seconds';
+    }
+    
+    // Update session stats display
+    document.getElementById('accuracy').textContent = sessionStats.accuracy + '%';
+    document.getElementById('completed').textContent = `${sessionStats.completed}/${poses.length}`;
+}
+
+// Complete current pose
+function completePose(success) {
+    if (success) {
+        sessionStats.completed++;
+        document.getElementById('feedback').innerHTML = `
+            <h3 style="color: green;">🎉 Pose Completed!</h3>
+            <p>Great job! Moving to next pose...</p>
+        `;
+    }
+    
+    // Move to next pose or finish
+    setTimeout(() => {
+        currentPoseIndex++;
+        if (currentPoseIndex >= totalPoses) {
+            // All poses completed
+            stopPractice();
+        } else {
+            updatePoseDisplay();
+        }
+    }, 2000);
+}
+
+// Skip current pose
+function skipPose() {
+    if (holdTimer) {
+        clearInterval(holdTimer);
+        holdTimer = null;
+        holdStartTime = null;
+    }
+    
+    document.getElementById('feedback').innerHTML = `
+        <h3>⏭️ Pose Skipped</h3>
+        <p>Moving to next pose...</p>
+    `;
+    
+    setTimeout(() => {
+        currentPoseIndex++;
+        if (currentPoseIndex >= totalPoses) {
+            stopPractice();
+        } else {
+            updatePoseDisplay();
+        }
+    }, 1000);
+}
+
+// Save session to database
+async function saveSession() {
+    try {
+        const response = await fetch('/save_session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                accuracy: sessionStats.accuracy,
+                streak: sessionStats.completed,
+                level: level
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            console.log('Session saved successfully');
+        }
+    } catch (error) {
+        console.error('Failed to save session:', error);
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    video = document.getElementById('video');
+    canvas = document.getElementById('canvas');
+    ctx = canvas.getContext('2d');
+    
+    // Event listeners
+    document.getElementById('start-btn').addEventListener('click', startPractice);
+    document.getElementById('stop-btn').addEventListener('click', stopPractice);
+    document.getElementById('skip-btn').addEventListener('click', skipPose);
+});
+</script>
+
+<style>
+.practice-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.feedback-section {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.feedback-box {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    min-height: 80px;
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8f9fa;
+    padding: 10px 20px;
+    border-radius: 5px;
+}
+
+.main-practice {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin-bottom: 20px;
+}
+
+.camera-section, .pose-section {
+    text-align: center;
+}
+
+.camera-section h3, .pose-section h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+#video {
+    width: 100%;
+    max-width: 500px;
+    height: auto;
+    border-radius: 10px;
+    border: 3px solid #ddd;
+}
+
+.pose-image {
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.pose-image img {
+    width: 100%;
+    height: auto;
+    border-radius: 10px;
+    border: 3px solid #ddd;
+}
+
+.status-indicator {
+    margin-top: 10px;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-weight: bold;
+}
+
+.pose-indicator {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 5px;
+    font-weight: bold;
+    font-size: 18px;
+}
+
+.pose-indicator.correct {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.pose-indicator.incorrect {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.pose-indicator.wrong {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.controls {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.btn {
+    padding: 12px 24px;
+    margin: 0 10px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background: #007bff;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #0056b3;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #545b62;
+}
+
+.btn-warning {
+    background: #ffc107;
+    color: #212529;
+}
+
+.btn-warning:hover:not(:disabled) {
+    background: #e0a800;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.session-stats {
+    display: flex;
+    justify-content: space-around;
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 10px;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-label {
+    display: block;
+    font-weight: bold;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+.stat-value {
+    display: block;
+    font-size: 24px;
+    font-weight: bold;
+    color: #333;
+}
+
+@media (max-width: 768px) {
+    .main-practice {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .session-stats {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .controls {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .btn {
+        margin: 0;
+    }
+}
+</style>
+</body>
+</html>

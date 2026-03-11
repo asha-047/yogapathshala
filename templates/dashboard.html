@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Dashboard - YogaPathshala</title>
+</head>
+<body>
+
+<nav>
+    <div class="logo">🧘 YogaPathshala</div>
+    <ul>
+        <li><strong>Welcome, {{name}}!</strong></li>
+        <li><a href="/levels">Workout Levels</a></li>
+        <li><a href="/logout">Logout</a></li>
+    </ul>
+</nav>
+
+<div class="cards">
+    <div class="card">
+        <h3>{{ sessions }}</h3>
+        <p>Sessions Completed</p>
+    </div>
+    <div class="card">
+        <h3>{{ accuracy }}%</h3>
+        <p>Average Accuracy</p>
+    </div>
+    <div class="card">
+        <h3>🔥 {{ streak }}</h3>
+        <p>Day Streak</p>
+    </div>
+</div>
+
+</body>
+</html>

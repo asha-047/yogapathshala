@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Register - YogaPathshala</title>
+</head>
+<body>
+
+<nav>
+    <div class="logo">🧘 YogaPathshala</div>
+    <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/login">Login</a></li>
+    </ul>
+</nav>
+
+<div class="container">
+    <h2>Create Account</h2>
+    <form method="POST" action="/register">
+        <input name="name" type="text" placeholder="Full Name" required>
+        <input name="email" type="email" placeholder="Email" required>
+        <input name="password" type="password" placeholder="Password" required>
+
+        <select name="role" required>
+            <option value="">Select Role</option>
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+        </select>
+
+        <button class="btn">Sign Up</button>
+    </form>
+    
+    <p>Already have an account? <a href="/login">Login here</a></p>
+</div>
+
+</body>
+</html>
